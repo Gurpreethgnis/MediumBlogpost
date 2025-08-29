@@ -1,0 +1,383 @@
+# Project Overview
+
+An internal‑only Medium‑style blogging platform for company communication. Focus on fast writing, safe sharing, and easy discovery **inside** the organization. No public SEO, sitemaps, or RSS.
+
+---
+
+## Goals & Constraints (Internal‑Only)
+
+* **Access**: SSO users only (Okta/Azure AD/Google Workspace via OIDC). No public sign‑ups.
+* **Visibility**: Post visibility must be **Org‑wide**, **Space/Team**, or **Private (invite‑only)**.
+* **Discoverability**: internal search + tags; **no** public indexing.
+* **Compliance**: audit logs for read/write, retention rules, optional legal hold.
+* **Integrations**: Slack/Teams notifications, corporate SMTP email, internal object storage.
+* **Performance**: snappy editor, reliable autosave, predictable pagination.
+
+---
+
+## Work Breakdown Structure (Chunks of Work)
+
+### 1. Authentication & Authorization
+
+* **Tasks**
+
+  * Integrate OIDC login (Okta/Azure AD/Google Workspace)
+  * Map IdP groups → app roles
+  * Implement role‑based access control middleware
+* **Test Cases**
+
+  * ✅ Login with valid SSO → redirect to dashboard
+  * ❌ Invalid token → 401 Unauthorized
+  * ✅ User in `admin` group can access `/admin`, reader cannot
+
+### 2. Database & Models
+
+* **Tasks**
+
+  * Define Prisma schema (Users, Posts, Spaces, Comments, Attachments, AuditLog)
+  * Run migrations
+* **Test Cases**
+
+  * ✅ Creating a post persists correctly
+  * ✅ Posts with visibility = `SPACE` enforce spaceId presence
+  * ❌ Invalid enum values rejected
+
+### 3. Editor & Drafts
+
+* **Tasks**
+
+  * Integrate TipTap rich editor
+  * Autosave drafts with debounce
+  * Implement version history
+* **Test Cases**
+
+  * ✅ Draft autosaves every 10s without losing text
+  * ✅ Published post still keeps prior versions
+  * ❌ Editing without permissions blocked
+
+### 4. File Uploads & Attachments
+
+* **Tasks**
+
+  * Presigned uploads to S3/MinIO
+  * Virus scanning + image resizing workers
+* **Test Cases**
+
+  * ✅ Upload small PNG works, URL returned
+  * ✅ Large file (> limit) rejected
+  * ✅ Infected file blocked and flagged
+
+### 5. Posts & Feeds
+
+* **Tasks**
+
+  * CRUD APIs for posts (draft, publish, unpublish)
+  * Org feed, space feed, author pages, tag pages
+  * Clap/bookmark functionality
+* **Test Cases**
+
+  * ✅ Published post appears in feeds
+  * ✅ Clap increments count but max 50 per user
+  * ❌ Private post not visible to non‑invited
+
+### 6. Spaces & Membership
+
+* **Tasks**
+
+  * Create spaces, manage members & roles
+  * Restrict visibility by membership
+* **Test Cases**
+
+  * ✅ Member can view space posts
+  * ❌ Non‑member cannot access restricted posts
+  * ✅ Owner can add/remove members
+
+### 7. Comments & Moderation
+
+* **Tasks**
+
+  * Threaded (1‑level) comments
+  * Flagging & moderation tools
+* **Test Cases**
+
+  * ✅ Comment visible after posting
+  * ✅ Flagged comment hidden for readers, visible in admin queue
+  * ❌ Non‑logged in user cannot comment
+
+### 8. Search & Discovery
+
+* **Tasks**
+
+  * Implement Postgres full‑text search
+  * Filters by space, tag, author
+* **Test Cases**
+
+  * ✅ Search for keyword returns matching posts
+  * ✅ Search scoped to space returns only space posts
+
+### 9. Notifications & Integrations
+
+* **Tasks**
+
+  * Slack/Teams webhook integration per space
+  * Email via corporate SMTP
+* **Test Cases**
+
+  * ✅ New post in space triggers Slack message
+  * ✅ Admin audit report emailed successfully
+
+### 10. Audit & Compliance
+
+* **Tasks**
+
+  * Implement append‑only AuditLog with hash chain
+  * Retention policies + legal hold flag
+* **Test Cases**
+
+  * ✅ All post CRUD actions logged
+  * ✅ Tampering with logs breaks hash chain
+  * ✅ Content past retention deleted unless legal hold
+
+### 11. Frontend UI & Routing
+
+* **Tasks**
+
+  * React Router routes: `/`, `/space/:key`, `/p/:slug`, `/new`, `/edit/:id`, `/admin`
+  * Implement layouts (feed, editor, admin)
+* **Test Cases**
+
+  * ✅ Navigating to `/p/:slug` loads post detail
+  * ✅ `/admin` accessible only to admins
+  * ✅ Dark mode toggle persists preference
+
+### 12. Deployment & Observability
+
+* **Tasks**
+
+  * CI/CD pipelines (dev/stage/prod)
+  * OpenTelemetry traces + Grafana dashboards
+* **Test Cases**
+
+  * ✅ Build/test pipeline passes on PR
+  * ✅ Grafana shows API latency metrics
+  * ✅ Slack alert on API error rate spike
+
+---
+
+## Security Checklist
+
+* [ ] OIDC client set up with redirect URIs
+* [ ] CORS allowlist → internal domains only
+* [ ] Helmet + strict CSP
+* [ ] Rate limiting on sensitive endpoints
+* [ ] Sanitization of uploads + inputs
+* [ ] Audit logging verified
+
+---
+
+## Ready‑to‑Build Checklist
+
+* [ ] DB migrations applied (Space, Attachment, AuditLog, Post.visibility)
+* [ ] S3/MinIO bucket + IAM; presign service in place
+* [ ] CI/CD environments (dev/stage/prod); migrations in pipeline
+* [ ] OTel tracing wired end‑to‑end; Grafana dashboards created
+* [ ] Slack/Teams webhooks configured per space
+* [ ] Editor with autosave + uploads ready; draft restore on refresh
+* [ ] RBAC middleware enforcing visibility across all endpoints
+* [ ] Audit logging + export endpoint complete
+
+---
+
+# Work Breakdown & Test Cases (for the Coding Agent)
+
+Below are **deliverable‑sized chunks** with clear acceptance criteria (AC) and test cases (unit, integration, e2e, security). Each chunk should ship with a PR, test coverage, and a short runbook snippet.
+
+## 0) Project Bootstrap
+
+**Scope**: Monorepo (frontend `/web`, backend `/api`, workers `/worker`), Docker Compose, GitHub Actions, Prettier/ESLint, Husky pre‑commit, env schema with Zod.
+**AC**:
+
+* Yarn/npm workspaces compile on CI.
+* `docker compose up` runs web+api+db+redis locally.
+* Single `make dev` starts all services.
+  **Tests**:
+* *Unit*: config loader validates required env vars (missing `DATABASE_URL` fails).
+* *Integration*: CI pipeline runs build & test on PR.
+* *E2E*: Health checks `GET /api/v1/health` returns 200; web boots to login screen in Cypress.
+
+## 1) SSO Auth (OIDC)
+
+**Scope**: OIDC PKCE login, callback, session/JWT mint, logout; map IdP groups→roles (`reader/author/editor/admin`).
+**AC**:
+
+* Only SSO users can access any page beyond `/login`.
+* Roles populated on each login; admin can be toggled via group.
+  **Tests**:
+* *Unit (api)*: token verifier rejects expired/not‑before tokens.
+* *Integration*: simulate IdP (mock JWKS); login flow returns session cookie/JWT; `/me` returns profile.
+* *E2E*: Cypress login via mock IdP; unauthorized user gets 403 on `/admin`.
+* *Security*: CSRF not applicable (Bearer); assert SameSite/Lax for any cookies; CORS locked to internal origins.
+
+## 2) Database & Prisma Migrations
+
+**Scope**: Create schemas for User, Post, Tag, Space, SpaceMember, Comment, Clap, Bookmark, View, Attachment, AuditLog.
+**AC**:
+
+* `prisma migrate deploy` succeeds; seed script creates sample users/spaces.
+  **Tests**:
+* *Unit*: schema zod types align with Prisma types.
+* *Integration*: foreign key constraints validated; cascade rules as expected.
+* *Perf*: indexes exist on `Post.slug`, `Post.publishedAt`, GIN for search.
+
+## 3) RBAC & Visibility Middleware
+
+**Scope**: Enforce `ORG/SPACE/PRIVATE` visibility on all post reads/writes; space membership checks.
+**AC**:
+
+* Non‑members cannot read `SPACE` posts; only invitees can read `PRIVATE`.
+  **Tests**:
+* *Unit*: policy functions for `canReadPost(user, post)`.
+* *Integration*: API returns 403 for unauthorized reads; 404 for non‑existent.
+* *E2E*: Cypress user A/B scenario proves space isolation.
+* *Security*: attempt direct object access (`/posts/:id`) blocked without permission.
+
+## 4) Posts CRUD + Slugs + Versions
+
+**Scope**: Create draft, update, publish/unpublish, generate unique slug, version snapshots.
+**AC**:
+
+* Draft autosave timestamps; publishing sets `publishedAt` and slug is stable.
+  **Tests**:
+* *Unit*: slugify handles collisions ("Hello"→`hello`, `hello-2`).
+* *Integration*: POST/PATCH/Publish happy path; Problem Details on invalid payload.
+* *E2E*: author creates→publishes→edits; version history shows prior snapshot.
+
+## 5) Rich Editor & Uploads
+
+**Scope**: TipTap editor with toolbar; presigned S3 uploads; ClamAV scan; image resizing job.
+**AC**:
+
+* Paste/drag images works; progress UI; content sanitized server‑side.
+  **Tests**:
+* *Unit*: HTML sanitization removes scripts but keeps allowed tags.
+* *Integration*: `/uploads` returns presign; uploaded image visible; virus‑positive sample rejected.
+* *E2E*: Draft with images persists and renders identically on post page.
+* *Security*: content‑type, size limit, and extension checks.
+
+## 6) Tags & Search (Internal)
+
+**Scope**: Tag CRUD (admin for create/rename), tag pages; Postgres full‑text search with ranking by recency.
+**AC**:
+
+* Search returns relevant results for title/body/tag queries.
+  **Tests**:
+* *Unit*: to\_tsvector index helpers; highlight snippets generator.
+* *Integration*: `/posts?q=…` returns ordered hits; tag filter reduces set.
+* *E2E*: search from navbar, navigate to results, paginate.
+* *Perf*: search p95 < 150ms on seeded data of 10k posts.
+
+## 7) Comments & Reactions
+
+**Scope**: 1‑level threaded comments; clap/emoji reactions with per‑user limits.
+**AC**:
+
+* Max 50 claps/user/post; comments editable by author within 10 minutes.
+  **Tests**:
+* *Unit*: clamp function enforces limits.
+* *Integration*: spam/rate‑limit on comments; moderation hide/flag endpoints.
+* *E2E*: comment thread displays; moderation action reflects instantly.
+
+## 8) Feeds (Home, Space, Author, Tag)
+
+**Scope**: Latest + trending (last 7d) with infinite scroll; author and tag feeds.
+**AC**:
+
+* Pagination stable with `page`/`limit`; cursor optional for infinite scroll.
+  **Tests**:
+* *Unit*: trending query weights recency + claps.
+* *Integration*: pagination headers; deterministic ordering with tie‑breakers.
+* *E2E*: infinite scroll loads additional pages without duplicates.
+
+## 9) Notifications (Slack/Teams)
+
+**Scope**: Worker posts to channel when a Space gets a new published post.
+**AC**:
+
+* Per‑space webhook URL; opt‑out per user.
+  **Tests**:
+* *Unit*: message templater formats links.
+* *Integration*: mock webhook receives payload; retries with exponential backoff.
+* *E2E*: publishing triggers a message in test channel.
+* *Reliability*: dead‑letter queue for failures.
+
+## 10) Audit Logging & Admin
+
+**Scope**: Append‑only audit logs with hash chain; admin UI to filter/export.
+**AC**:
+
+* All CRUD + views generate logs with `prevHash` link.
+  **Tests**:
+* *Unit*: hash chain validator detects tampering.
+* *Integration*: `/admin/audit` filters by actor/action/date.
+* *E2E*: export CSV from UI matches API results.
+* *Security*: only admins can access; 403 otherwise.
+
+## 11) Analytics (Lightweight)
+
+**Scope**: Views per post, read‑ratio estimate, top tags/spaces.
+**AC**:
+
+* Dashboard shows counts and trends; respects RBAC.
+  **Tests**:
+* *Unit*: read‑ratio calculator handles edge cases (quick bounces).
+* *Integration*: aggregation queries return expected numbers on seeded data.
+* *E2E*: charts render and filter by space/date.
+
+## 12) Observability & SLOs
+
+**Scope**: OpenTelemetry spans, structured logs, error budgets; health and readiness probes.
+**AC**:
+
+* Golden signal dashboards (latency, traffic, errors, saturation) in Grafana.
+  **Tests**:
+* *Integration*: failing dependency (Redis down) flips readiness to false.
+* *Perf*: p95 API latency < 200ms on baseline load.
+
+## 13) Security Hardening & Compliance
+
+**Scope**: CSP, CORS allowlist, input sanitization, rate limits, retention jobs, legal hold.
+**AC**:
+
+* External scanners (OWASP ZAP) show no criticals; dependency audit clean.
+  **Tests**:
+* *Security*: XSS payloads neutralized; IDOR tests for posts/comments pass.
+* *Integration*: retention deletes soft‑deleted items after policy window; legal hold exempts.
+
+## 14) Release & Runbooks
+
+**Scope**: Blue/green deployment guide, backup/restore, incident playbook.
+**AC**:
+
+* Disaster recovery drill: restore DB snapshot to staging within RTO.
+  **Tests**:
+* *Operational*: scripted backup/restore job passes; runbook steps validated in staging.
+
+---
+
+## Test Tooling & Conventions
+
+* **Backend**: Jest + Supertest; Testcontainers (Postgres/Redis) for deterministic integration tests.
+* **Frontend**: Vitest + React Testing Library for unit; Cypress for e2e.
+* **Coverage Targets**: 80% lines/branches for critical services; must not regress.
+* **Fixtures/Factories**: `@faker-js/faker` and factory functions per model.
+* **Static Analysis**: ESLint, TypeScript strict, `ts-prune` for dead code.
+* **Load Tests**: k6 or Artillery scripts for key endpoints (search, feeds, publish).
+* **API Contract**: OpenAPI spec in repo; Dredd or Schemathesis contract tests.
+
+## Definition of Done (per chunk)
+
+* Code + unit/integration/e2e tests merged and green on CI.
+* Docs updated (README + runbook snippet).
+* Feature flagged (if risky) and behind role checks.
+* Observability: spans/metrics/logs added for new endpoints.
+* Security review completed; secrets in vault; least‑privilege IAM.

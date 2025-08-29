@@ -1,0 +1,276 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  READER
+  AUTHOR
+  EDITOR
+  ADMIN
+}
+
+enum PostVisibility {
+  ORG
+  SPACE
+  PRIVATE
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CommentStatus {
+  ACTIVE
+  HIDDEN
+  FLAGGED
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  PUBLISH
+  UNPUBLISH
+  VIEW
+  CLAP
+  BOOKMARK
+  COMMENT
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  avatar        String?
+  role          UserRole  @default(READER)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  posts         Post[]
+  comments      Comment[]
+  claps         Clap[]
+  bookmarks     Bookmark[]
+  views         View[]
+  spaceMembers  SpaceMember[]
+  auditLogs     AuditLog[]
+  invitedPosts  Post[]    @relation("PostInvitees")
+  attachments   Attachment[]
+
+  @@map("users")
+}
+
+model Space {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  avatar      String?
+  isPublic   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  posts      Post[]
+  members    SpaceMember[]
+
+  @@map("spaces")
+}
+
+model SpaceMember {
+  id        String   @id @default(cuid())
+  userId    String
+  spaceId   String
+  role      UserRole @default(READER)
+  joinedAt  DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, spaceId])
+  @@map("space_members")
+}
+
+model Post {
+  id            String        @id @default(cuid())
+  title         String
+  slug          String        @unique
+  excerpt       String?
+  content       String        @db.Text
+  status        PostStatus    @default(DRAFT)
+  visibility    PostVisibility @default(ORG)
+  publishedAt   DateTime?
+  authorId      String
+  spaceId       String?
+  featuredImage String?
+  tags          Tag[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  author       User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  space        Space?        @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+  comments     Comment[]
+  claps        Clap[]
+  bookmarks    Bookmark[]
+  views        View[]
+  versions     PostVersion[]
+  invitees     User[]        @relation("PostInvitees")
+  attachments  Attachment[]
+
+  @@index([status, publishedAt])
+  @@index([visibility, spaceId])
+  @@index([authorId])
+  @@map("posts")
+}
+
+model PostVersion {
+  id        String   @id @default(cuid())
+  postId    String
+  title     String
+  content   String  @db.Text
+  version   Int
+  createdAt DateTime @default(now())
+
+  // Relations
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, version])
+  @@map("post_versions")
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  color     String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  posts     Post[]
+
+  @@map("tags")
+}
+
+model Comment {
+  id        String        @id @default(cuid())
+  content   String        @db.Text
+  status    CommentStatus @default(ACTIVE)
+  authorId  String
+  postId    String
+  parentId  String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  // Relations
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post      Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent    Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[]     @relation("CommentReplies")
+
+  @@index([postId, status])
+  @@index([parentId])
+  @@map("comments")
+}
+
+model Clap {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  count     Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@map("claps")
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@map("bookmarks")
+}
+
+model View {
+  id        String   @id @default(cuid())
+  userId    String?
+  postId    String
+  ipAddress String?
+  userAgent String?
+  viewedAt  DateTime @default(now())
+
+  // Relations
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, viewedAt])
+  @@map("views")
+}
+
+model Attachment {
+  id          String   @id @default(cuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  url         String
+  postId      String?
+  uploadedBy  String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user        User     @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  post        Post?    @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([postId])
+  @@map("attachments")
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  action      AuditAction
+  resourceType String
+  resourceId  String
+  actorId     String
+  actorEmail  String
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  prevHash    String?
+  hash        String
+  createdAt   DateTime    @default(now())
+
+  // Relations
+  actor       User        @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([action, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([actorId])
+  @@map("audit_logs")
+}

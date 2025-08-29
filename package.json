@@ -1,0 +1,41 @@
+{
+  "name": "medium-blog-platform",
+  "version": "1.0.0",
+  "description": "Internal Medium-style blogging platform for company communication",
+  "private": true,
+  "workspaces": [
+    "web",
+    "api",
+    "worker"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\" \"npm run dev:worker\"",
+    "dev:api": "cd api && npm run dev",
+    "dev:web": "cd web && npm run dev",
+    "dev:worker": "cd worker && npm run dev",
+    "build": "npm run build:api && npm run build:web && npm run build:worker",
+    "build:api": "cd api && npm run build",
+    "build:web": "cd web && npm run build",
+    "build:worker": "cd worker && npm run build",
+    "test": "npm run test:api && npm run test:web && npm run test:worker",
+    "test:api": "cd api && npm run test",
+    "test:web": "cd web && npm run test",
+    "test:worker": "cd worker && npm run test",
+    "lint": "npm run lint:api && npm run lint:web && npm run lint:worker",
+    "lint:api": "cd api && npm run lint",
+    "lint:web": "cd web && npm run lint",
+    "lint:worker": "cd worker && npm run lint",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "husky": "^8.0.3",
+    "prettier": "^3.1.0",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
